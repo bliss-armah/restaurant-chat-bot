@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: restaurant_bot_db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: restaurant_user
+      POSTGRES_PASSWORD: restaurant_password
+      POSTGRES_DB: restaurant_bot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restaurant_user -d restaurant_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: restaurant_bot_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://restaurant_user:restaurant_password@postgres:5432/restaurant_bot?schema=public
+
+      # Server
+      PORT: 3000
+      NODE_ENV: development
+
+      # WhatsApp Cloud API (replace with your values)
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-your_whatsapp_access_token}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-your_phone_number_id}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-your_custom_verify_token}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-your_business_account_id}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_changeme_in_production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+
+      # Admin
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@restaurant.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Mount source code for development hot reload
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+    command: sh -c "npx prisma db push && npm run dev"
+
+volumes:
+  postgres_data:
+    driver: local

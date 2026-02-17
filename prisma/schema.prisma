@@ -1,0 +1,218 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// RESTAURANT & USER MANAGEMENT
+// ============================================
+
+model Restaurant {
+  id                          String         @id @default(cuid())
+  name                        String
+  description                 String?
+  phone                       String         @unique
+  email                       String?
+  address                     String?
+  logo                        String?
+  momoNumber                  String         @map("momo_number")
+  momoName                    String         @map("momo_name")
+  whatsappNumber              String?        @unique @map("whatsapp_number")
+  whatsappPhoneNumberId       String?        @unique @map("whatsapp_phone_number_id")  // Meta Phone Number ID
+  whatsappBusinessAccountId   String?        @map("whatsapp_business_account_id")      // Meta Business Account ID
+  isActive                    Boolean        @default(true) @map("is_active")
+  subscriptionStatus          String         @default("TRIAL") @map("subscription_status")  // TRIAL, ACTIVE, SUSPENDED, CANCELLED
+  trialEndsAt                 DateTime?      @map("trial_ends_at")
+  createdAt                   DateTime       @default(now()) @map("created_at")
+  updatedAt                   DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  users           User[]
+  categories      MenuCategory[]
+  orders          Order[]
+  customers       Customer[]
+  conversations   Conversation[]
+
+  @@map("restaurants")
+}
+
+model User {
+  id            String      @id @default(cuid())
+  email         String?     @unique  // Optional - can login with phone instead
+  phone         String?     @unique  // Phone number in E.164 format (+233...)
+  password      String      // Hashed with bcrypt - NOTE: Supabase Auth handles authentication, this is legacy
+  name          String
+  role          UserRole    @default(RESTAURANT_ADMIN)
+  restaurantId  String?     @map("restaurant_id")  // Optional for SUPER_ADMIN
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relations  
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN       // Platform admin - manages all restaurants
+  RESTAURANT_ADMIN  // Restaurant owner/manager - manages own restaurant
+}
+
+// ============================================
+// CUSTOMER MANAGEMENT
+// ============================================
+
+model Customer {
+  id            String        @id @default(cuid())
+  phone         String        // WhatsApp phone number
+  name          String?
+  restaurantId  String        @map("restaurant_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orders        Order[]
+  conversation  Conversation?
+
+  @@unique([phone, restaurantId])
+  @@map("customers")
+}
+
+// ============================================
+// MENU MANAGEMENT
+// ============================================
+
+model MenuCategory {
+  id            String      @id @default(cuid())
+  name          String
+  description   String?
+  sortOrder     Int         @default(0) @map("sort_order")
+  isActive      Boolean     @default(true) @map("is_active")
+  restaurantId  String      @map("restaurant_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items         MenuItem[]
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  price         Float
+  categoryId    String        @map("category_id")
+  imageUrl      String?       @map("image_url")
+  isAvailable   Boolean       @default(true) @map("is_available")
+  sortOrder     Int           @default(0) @map("sort_order")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  category      MenuCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+
+  @@map("menu_items")
+}
+
+// ============================================
+// ORDER MANAGEMENT
+// ============================================
+
+model Order {
+  id                String        @id @default(cuid())
+  orderNumber       String        @unique @map("order_number")
+  customerId        String        @map("customer_id")
+  restaurantId      String        @map("restaurant_id")
+  totalAmount       Float         @map("total_amount")
+  status            OrderStatus   @default(PENDING)
+  paymentStatus     PaymentStatus @default(UNPAID) @map("payment_status")
+  deliveryAddress   String?       @map("delivery_address")
+  customerNotes     String?       @map("customer_notes")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  customer          Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant        Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  items             OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String      @id @default(cuid())
+  orderId       String      @map("order_id")
+  menuItemId    String      @map("menu_item_id")
+  itemName      String      @map("item_name")      // Snapshot of name at order time
+  itemPrice     Float       @map("item_price")     // Snapshot of price at order time
+  quantity      Int
+  subtotal      Float
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  order         Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem      MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@map("order_items")
+}
+
+enum OrderStatus {
+  PENDING           // Order created, awaiting payment
+  CONFIRMED         // Payment verified, preparing order
+  PREPARING         // Kitchen is preparing
+  READY             // Ready for pickup/delivery
+  COMPLETED         // Order delivered/picked up
+  CANCELLED         // Order cancelled
+}
+
+enum PaymentStatus {
+  UNPAID                  // No payment initiated
+  PENDING_VERIFICATION    // Customer said "PAID", awaiting admin verification
+  VERIFIED                // Payment verified by admin
+  FAILED                  // Payment verification failed
+}
+
+// ============================================
+// CONVERSATION MANAGEMENT
+// ============================================
+
+model Conversation {
+  id            String              @id @default(cuid())
+  customerId    String              @unique @map("customer_id")
+  restaurantId  String              @map("restaurant_id")
+  state         ConversationState   @default(WELCOME)
+  context       Json?               // Stores temporary order data as JSON
+  lastMessageAt DateTime            @default(now()) @map("last_message_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  customer      Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant    Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("conversations")
+}
+
+enum ConversationState {
+  WELCOME
+  SELECT_CATEGORY
+  SELECT_ITEM
+  SELECT_QUANTITY
+  ADD_MORE
+  CONFIRM_ORDER
+  PAYMENT_INSTRUCTIONS
+  PAYMENT_CONFIRMATION
+}
