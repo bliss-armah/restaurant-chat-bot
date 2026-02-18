@@ -30,6 +30,12 @@ export const config = {
     email: process.env.ADMIN_EMAIL || "admin@restaurant.com",
     password: process.env.ADMIN_PASSWORD || "changeme123",
   },
+
+  // Supabase (for admin operations)
+  supabase: {
+    url: process.env.SUPABASE_URL || "",
+    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  },
 } as const;
 
 // Validate required environment variables

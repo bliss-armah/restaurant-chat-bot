@@ -34,6 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Import routes
 import webhookRoutes from "./routes/webhookRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 // Health check
 app.get("/health", (req, res) => {
@@ -44,8 +45,11 @@ app.get("/health", (req, res) => {
   });
 });
 
-// WhatsApp Webhook Route (only route needed - dashboard uses Supabase directly)
+// WhatsApp Webhook
 app.use("/webhook", webhookRoutes);
+
+// Admin API (user management, etc.)
+app.use("/admin", adminRoutes);
 
 // ============================================
 // ERROR HANDLING
