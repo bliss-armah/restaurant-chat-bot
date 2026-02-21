@@ -15,7 +15,7 @@ datasource db {
 // ============================================
 
 model Restaurant {
-  id                          String         @id @default(cuid())
+  id                          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                        String
   description                 String?
   phone                       String         @unique
@@ -25,10 +25,10 @@ model Restaurant {
   momoNumber                  String         @map("momo_number")
   momoName                    String         @map("momo_name")
   whatsappNumber              String?        @unique @map("whatsapp_number")
-  whatsappPhoneNumberId       String?        @unique @map("whatsapp_phone_number_id")  // Meta Phone Number ID
-  whatsappBusinessAccountId   String?        @map("whatsapp_business_account_id")      // Meta Business Account ID
+  whatsappPhoneNumberId       String?        @unique @map("whatsapp_phone_number_id")
+  whatsappBusinessAccountId   String?        @map("whatsapp_business_account_id")
   isActive                    Boolean        @default(true) @map("is_active")
-  subscriptionStatus          String         @default("TRIAL") @map("subscription_status")  // TRIAL, ACTIVE, SUSPENDED, CANCELLED
+  subscriptionStatus          String         @default("TRIAL") @map("subscription_status")
   trialEndsAt                 DateTime?      @map("trial_ends_at")
   createdAt                   DateTime       @default(now()) @map("created_at")
   updatedAt                   DateTime       @updatedAt @map("updated_at")
@@ -39,26 +39,47 @@ model Restaurant {
   orders          Order[]
   customers       Customer[]
   conversations   Conversation[]
+  userRoles       UserRoleRecord[]
 
   @@map("restaurants")
 }
 
 model User {
-  id            String      @id @default(cuid())
-  email         String?     @unique  // Optional - can login with phone instead
-  phone         String?     @unique  // Phone number in E.164 format (+233...)
-  password      String      // Hashed with bcrypt - NOTE: Supabase Auth handles authentication, this is legacy
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String?     @unique
+  phone         String?     @unique
+  password      String
   name          String
   role          UserRole    @default(RESTAURANT_ADMIN)
-  restaurantId  String?     @map("restaurant_id")  // Optional for SUPER_ADMIN
+  restaurantId  String?     @map("restaurant_id") @db.Uuid
   isActive      Boolean     @default(true) @map("is_active")
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
-  // Relations  
+  // Relations
   restaurant    Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
+  @@index([restaurantId])
   @@map("users")
+}
+
+/// Canonical role store for Supabase RLS.
+/// userId maps to auth.users.id (managed by Supabase Auth).
+/// NEVER read auth.jwt() -> user_metadata for role — use this table.
+model UserRoleRecord {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String      @unique @map("user_id") @db.Uuid
+  role          String      // 'SUPER_ADMIN' | 'RESTAURANT_ADMIN'
+  restaurantId  String?     @map("restaurant_id") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([restaurantId])
+  @@map("user_roles")
 }
 
 enum UserRole {
@@ -71,10 +92,10 @@ enum UserRole {
 // ============================================
 
 model Customer {
-  id            String        @id @default(cuid())
-  phone         String        // WhatsApp phone number
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone         String
   name          String?
-  restaurantId  String        @map("restaurant_id")
+  restaurantId  String        @map("restaurant_id") @db.Uuid
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
@@ -92,12 +113,12 @@ model Customer {
 // ============================================
 
 model MenuCategory {
-  id            String      @id @default(cuid())
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name          String
   description   String?
   sortOrder     Int         @default(0) @map("sort_order")
   isActive      Boolean     @default(true) @map("is_active")
-  restaurantId  String      @map("restaurant_id")
+  restaurantId  String      @map("restaurant_id") @db.Uuid
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
@@ -109,11 +130,11 @@ model MenuCategory {
 }
 
 model MenuItem {
-  id            String        @id @default(cuid())
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name          String
   description   String?
   price         Float
-  categoryId    String        @map("category_id")
+  categoryId    String        @map("category_id") @db.Uuid
   imageUrl      String?       @map("image_url")
   isAvailable   Boolean       @default(true) @map("is_available")
   sortOrder     Int           @default(0) @map("sort_order")
@@ -132,10 +153,10 @@ model MenuItem {
 // ============================================
 
 model Order {
-  id                String        @id @default(cuid())
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderNumber       String        @unique @map("order_number")
-  customerId        String        @map("customer_id")
-  restaurantId      String        @map("restaurant_id")
+  customerId        String        @map("customer_id") @db.Uuid
+  restaurantId      String        @map("restaurant_id") @db.Uuid
   totalAmount       Float         @map("total_amount")
   status            OrderStatus   @default(PENDING)
   paymentStatus     PaymentStatus @default(UNPAID) @map("payment_status")
@@ -153,11 +174,11 @@ model Order {
 }
 
 model OrderItem {
-  id            String      @id @default(cuid())
-  orderId       String      @map("order_id")
-  menuItemId    String      @map("menu_item_id")
-  itemName      String      @map("item_name")      // Snapshot of name at order time
-  itemPrice     Float       @map("item_price")     // Snapshot of price at order time
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId       String      @map("order_id") @db.Uuid
+  menuItemId    String      @map("menu_item_id") @db.Uuid
+  itemName      String      @map("item_name")
+  itemPrice     Float       @map("item_price")
   quantity      Int
   subtotal      Float
   createdAt     DateTime    @default(now()) @map("created_at")
@@ -170,19 +191,19 @@ model OrderItem {
 }
 
 enum OrderStatus {
-  PENDING           // Order created, awaiting payment
-  CONFIRMED         // Payment verified, preparing order
-  PREPARING         // Kitchen is preparing
-  READY             // Ready for pickup/delivery
-  COMPLETED         // Order delivered/picked up
-  CANCELLED         // Order cancelled
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
 }
 
 enum PaymentStatus {
-  UNPAID                  // No payment initiated
-  PENDING_VERIFICATION    // Customer said "PAID", awaiting admin verification
-  VERIFIED                // Payment verified by admin
-  FAILED                  // Payment verification failed
+  UNPAID
+  PENDING_VERIFICATION
+  VERIFIED
+  FAILED
 }
 
 // ============================================
@@ -190,11 +211,11 @@ enum PaymentStatus {
 // ============================================
 
 model Conversation {
-  id            String              @id @default(cuid())
-  customerId    String              @unique @map("customer_id")
-  restaurantId  String              @map("restaurant_id")
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String              @unique @map("customer_id") @db.Uuid
+  restaurantId  String              @map("restaurant_id") @db.Uuid
   state         ConversationState   @default(WELCOME)
-  context       Json?               // Stores temporary order data as JSON
+  context       Json?
   lastMessageAt DateTime            @default(now()) @map("last_message_at")
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
