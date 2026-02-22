@@ -69,7 +69,7 @@ export class WebhookController {
 
               // Identify restaurant by phone number
               const restaurant = await this.getRestaurantByPhone(
-                value.metadata.display_phone_number,
+                `+${value.metadata.display_phone_number}`,
               );
 
               if (restaurant) {

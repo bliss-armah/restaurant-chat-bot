@@ -158,9 +158,7 @@ export class ConversationService {
     );
   }
 
-  /**
-   * SELECT_CATEGORY state - User selected a category
-   */
+
   private async handleCategorySelection(
     from: string,
     categoryId: string,
