@@ -34,22 +34,44 @@ export class ConversationService {
     restaurantId: string,
     customerName?: string,
   ): Promise<void> {
-    // Find or create customer
     const customer = await this.customerRepo.findOrCreate(
       from,
       restaurantId,
       customerName,
     );
 
-    // Get or create conversation
     const conversation = await this.conversationRepo.getOrCreate(customer.id);
 
-    // Get context
     const context = (conversation.context as any as TempOrderContext) || {
       items: [],
     };
 
-    // Route based on current state
+    const normalizedText = messageText.trim().toLowerCase();
+
+    if (normalizedText === "restart") {
+      await prisma.order.updateMany({
+        where: {
+          customerId: customer.id,
+          paymentStatus: {
+            in: ["UNPAID", "PENDING_VERIFICATION"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+        },
+      });
+
+      await this.conversationRepo.reset(customer.id);
+
+      await this.whatsapp.sendTextMessage(
+        from,
+        "🔄 Your previous order has been cleared.\n\nLet's start fresh!",
+      );
+
+      await this.handleWelcome(from, customer.id, restaurantId);
+      return;
+    }
+
     switch (conversation.state) {
       case ConversationState.WELCOME:
         await this.handleWelcome(from, customer.id, restaurantId);
@@ -114,6 +136,7 @@ export class ConversationService {
     from: string,
     customerId: string,
     restaurantId: string,
+    context?: TempOrderContext,
   ): Promise<void> {
     // Get categories for this restaurant
     const categories = await prisma.menuCategory.findMany({
@@ -124,17 +147,21 @@ export class ConversationService {
       orderBy: { sortOrder: "asc" },
     });
 
+    const restaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+    });
+
     if (categories.length === 0) {
       await this.whatsapp.sendTextMessage(
         from,
-        "🍽️ Welcome! Our menu is being updated. Please check back later.",
+        `🍽️ Welcome ${restaurant?.name}! Our menu is being updated. Please check back later.`,
       );
       return;
     }
 
     await this.whatsapp.sendListMessage(
       from,
-      "🍽️ Welcome! Please select a category to start ordering:",
+      `Welcome to ${restaurant?.name}! Please select a category to start ordering:`,
       "View Menu",
       [
         {
@@ -152,12 +179,9 @@ export class ConversationService {
     await this.conversationRepo.updateState(
       customerId,
       ConversationState.SELECT_CATEGORY,
-      {
-        items: [],
-      },
+      context ?? { items: [] },
     );
   }
-
 
   private async handleCategorySelection(
     from: string,
@@ -321,10 +345,8 @@ export class ConversationService {
     const response = input.trim().toLowerCase();
 
     if (response === "yes" || response === "y") {
-      // Go back to category selection
-      await this.handleWelcome(from, customerId, restaurantId);
+      await this.handleWelcome(from, customerId, restaurantId, context);
     } else if (response === "no" || response === "n") {
-      // Show order summary
       await this.showOrderSummary(from, customerId, context);
     } else {
       await this.whatsapp.sendTextMessage(
