@@ -35,6 +35,7 @@ app.use(express.urlencoded({ extended: true }));
 // Import routes
 import webhookRoutes from "./routes/webhookRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
 
 // Health check
 app.get("/health", (req, res) => {
@@ -50,6 +51,9 @@ app.use("/webhook", webhookRoutes);
 
 // Admin API (user management, etc.)
 app.use("/admin", adminRoutes);
+
+// Orders API (restaurant-scoped, backend-driven)
+app.use("/orders", orderRoutes);
 
 // ============================================
 // ERROR HANDLING
