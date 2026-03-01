@@ -10,19 +10,22 @@ export class OrderController {
   async listOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const userRole = (req as any).userRole;
-      const restaurantId = userRole?.restaurantId as string | undefined;
+      const isSuperAdmin = userRole?.role === "SUPER_ADMIN";
+
+      const restaurantId: string | undefined = isSuperAdmin
+        ? ((req.query.restaurantId as string | undefined) ??
+          userRole?.restaurantId)
+        : userRole?.restaurantId;
 
       if (!restaurantId) {
-        res.status(400).json({
-          error:
-            "No restaurant associated with your account. Contact a super admin.",
-        });
+        // Super admin hasn't picked a restaurant yet — return empty list
+        // rather than an error so the UI can prompt them to select one.
+        res.json({ success: true, data: [] });
         return;
       }
 
       const orders = await orderService.getOrdersByRestaurant(restaurantId);
 
-      // Normalise field names to snake_case so the frontend doesn't need changes
       const normalised = orders.map((o) => ({
         id: o.id,
         order_number: o.orderNumber,
