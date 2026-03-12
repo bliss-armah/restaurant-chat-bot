@@ -506,7 +506,20 @@ export class ConversationService {
           `Type HI to place a new order.`,
       );
 
-      // TODO: Send notification to restaurant admin
+      const restaurant = await this.getRestaurant(restaurantId);
+      if (restaurant.phone) {
+        const notificationMessage =
+          `New payment notification!\n\n` +
+          `Order #${order.orderNumber}\n` +
+          `Customer: ${from}\n` +
+          `Amount: GHS ${Number(order.totalAmount).toFixed(2)}\n\n` +
+          `Payment status: Pending verification\n` +
+          `Check your dashboard to manage this order.`;
+
+        this.whatsapp.sendTextMessage(restaurant.phone, notificationMessage).catch((err) => {
+          console.error("Failed to send restaurant order notification:", err);
+        });
+      }
 
       await this.conversationRepo.reset(customerId);
     } else {
