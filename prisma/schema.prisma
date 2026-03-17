@@ -28,6 +28,10 @@ model Restaurant {
   whatsappPhoneNumberId       String?        @unique @map("whatsapp_phone_number_id")
   whatsappBusinessAccountId   String?        @map("whatsapp_business_account_id")
   isActive                    Boolean        @default(true) @map("is_active")
+  isOpen                      Boolean        @default(true) @map("is_open")
+  openingTime                 String?        @map("opening_time")  // "HH:MM" 24h, e.g. "08:00"
+  closingTime                 String?        @map("closing_time")  // "HH:MM" 24h, e.g. "22:00"
+  timezone                    String         @default("Africa/Accra") @map("timezone")
   subscriptionStatus          String         @default("TRIAL") @map("subscription_status")
   trialEndsAt                 DateTime?      @map("trial_ends_at")
   createdAt                   DateTime       @default(now()) @map("created_at")
@@ -41,6 +45,7 @@ model Restaurant {
   conversations   Conversation[]
   userRoles       UserRoleRecord[]
 
+  @@index([isActive, isOpen])
   @@map("restaurants")
 }
 
@@ -105,6 +110,7 @@ model Customer {
   conversation  Conversation?
 
   @@unique([phone, restaurantId])
+  @@index([restaurantId])
   @@map("customers")
 }
 
@@ -126,6 +132,7 @@ model MenuCategory {
   restaurant    Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   items         MenuItem[]
 
+  @@index([restaurantId, isActive])
   @@map("menu_categories")
 }
 
@@ -145,6 +152,7 @@ model MenuItem {
   category      MenuCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   orderItems    OrderItem[]
 
+  @@index([categoryId, isAvailable])
   @@map("menu_items")
 }
 
@@ -170,6 +178,9 @@ model Order {
   restaurant        Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   items             OrderItem[]
 
+  @@index([restaurantId, status])
+  @@index([restaurantId, createdAt])
+  @@index([customerId])
   @@map("orders")
 }
 
@@ -187,6 +198,7 @@ model OrderItem {
   order         Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem      MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
 
+  @@index([orderId])
   @@map("order_items")
 }
 
@@ -224,6 +236,7 @@ model Conversation {
   customer      Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   restaurant    Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
+  @@index([restaurantId])
   @@map("conversations")
 }
 

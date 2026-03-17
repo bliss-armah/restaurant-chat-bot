@@ -4,7 +4,6 @@ import helmet from "helmet";
 import { config, validateConfig } from "./config/env.js";
 import { errorHandler } from "./middleware/errorHandler";
 
-// Validate environment variables
 validateConfig();
 
 const app: Application = express();
@@ -13,18 +12,8 @@ const app: Application = express();
 // MIDDLEWARE
 // ============================================
 
-// Security
 app.use(helmet());
-
-// CORS
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN || "*",
-    credentials: true,
-  }),
-);
-
-// Body parsing
+app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -32,28 +21,44 @@ app.use(express.urlencoded({ extended: true }));
 // ROUTES
 // ============================================
 
-// Import routes
 import webhookRoutes from "./routes/webhookRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
+import restaurantRoutes from "./routes/restaurantRoutes.js";
+import categoryRoutes from "./routes/categoryRoutes.js";
+import menuItemRoutes from "./routes/menuItemRoutes.js";
+import statsRoutes from "./routes/statsRoutes.js";
 
-// Health check
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
   res.json({
     status: "OK",
-    service: "Restaurant Bot WhatsApp Webhook",
+    service: "Restaurant Bot API",
     timestamp: new Date().toISOString(),
   });
 });
 
-// WhatsApp Webhook
+// WhatsApp Webhook (public — verified by HMAC signature)
 app.use("/webhook", webhookRoutes);
 
-// Admin API (user management, etc.)
-app.use("/admin", adminRoutes);
+// Authentication
+app.use("/auth", authRoutes);
 
-// Orders API (restaurant-scoped, backend-driven)
+// Restaurant management
+app.use("/restaurants", restaurantRoutes);
+
+// Menu management (scoped to restaurant via JWT role)
+app.use("/categories", categoryRoutes);
+app.use("/menu-items", menuItemRoutes);
+
+// Orders
 app.use("/orders", orderRoutes);
+
+// Dashboard stats
+app.use("/stats", statsRoutes);
+
+// Admin user management (SUPER_ADMIN only)
+app.use("/admin", adminRoutes);
 
 // ============================================
 // ERROR HANDLING

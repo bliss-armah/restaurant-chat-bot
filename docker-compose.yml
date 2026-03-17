@@ -1,13 +1,12 @@
 version: "3.8"
 
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     container_name: restaurant_bot_db
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: restaurant_user
       POSTGRES_PASSWORD: restaurant_password
@@ -20,44 +19,41 @@ services:
       timeout: 5s
       retries: 5
 
-  # Backend API
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+      target: dev                       # uses the dev stage — has tsx + all devDeps
     container_name: restaurant_bot_api
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "4050:4050"
     environment:
-      # Database
       DATABASE_URL: postgresql://restaurant_user:restaurant_password@postgres:5432/restaurant_bot?schema=public
-
-      # Server
-      PORT: 3000
+      PORT: 4050
       NODE_ENV: development
-
-      # WhatsApp Cloud API (replace with your values)
-      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-your_whatsapp_access_token}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-your_phone_number_id}
-      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-your_custom_verify_token}
-      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-your_business_account_id}
-
-      # JWT
-      JWT_SECRET: ${JWT_SECRET:-dev_secret_changeme_in_production}
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
+      JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-
-      # Admin
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@restaurant.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@restaurant.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin1234!}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      # Mount source code for development hot reload
-      - ./src:/app/src
+      - ./src:/app/src          # hot reload — changes reflect immediately
       - ./prisma:/app/prisma
-    command: sh -c "npx prisma db push && npm run dev"
+    command: >
+      sh -c "
+        npx prisma generate &&
+        npx prisma db push &&
+        yarn db:seed &&
+        yarn dev
+      "
 
 volumes:
   postgres_data:

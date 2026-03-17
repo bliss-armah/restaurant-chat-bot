@@ -1,50 +1,35 @@
 import { Request, Response, NextFunction } from "express";
-import { prisma } from "../config/database.js";
 
 type AllowedRole = "SUPER_ADMIN" | "RESTAURANT_ADMIN";
 
 /**
  * Role guard middleware.
  *
- * Reads the caller's role from the user_roles table — NEVER from
- * the JWT user_metadata. Must be used after the authenticate() middleware.
+ * Reads role from the JWT payload attached by authenticate().
+ * Must be used after authenticate().
  *
- * Usage:
- *   router.post('/users', authenticate, requireRole('SUPER_ADMIN'), handler)
+ * Attaches req.userRole = { role, restaurantId } for downstream use.
  */
 export function requireRole(...roles: AllowedRole[]) {
-  return async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> => {
-    const authUser = (req as any).user;
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = (req as any).user as { id: string; role: string; restaurantId?: string };
 
-    if (!authUser?.id) {
+    if (!user?.id) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
-    // Look up role from DB — the canonical source of truth
-    const userRole = await prisma.userRoleRecord.findUnique({
-      where: { userId: authUser.id },
-      select: { role: true, restaurantId: true },
-    });
-
-    if (!userRole) {
-      res.status(403).json({ error: "Forbidden: no role assigned" });
+    if (!roles.includes(user.role as AllowedRole)) {
+      res.status(403).json({ error: `Forbidden: requires one of [${roles.join(", ")}]` });
       return;
     }
 
-    if (!roles.includes(userRole.role as AllowedRole)) {
-      res
-        .status(403)
-        .json({ error: `Forbidden: requires one of [${roles.join(", ")}]` });
-      return;
-    }
+    // Attach for downstream handlers
+    (req as any).userRole = {
+      role: user.role,
+      restaurantId: user.restaurantId ?? null,
+    };
 
-    // Attach role context for downstream handlers
-    (req as any).userRole = userRole;
     next();
   };
 }

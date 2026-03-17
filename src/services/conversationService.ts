@@ -26,6 +26,72 @@ export class ConversationService {
   }
 
   /**
+   * Returns current time (hours, minutes) in a given IANA timezone.
+   */
+  private getCurrentTimeInTimezone(timezone: string): { hours: number; minutes: number } {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const hours = parseInt(parts.find((p) => p.type === "hour")!.value, 10);
+    const minutes = parseInt(parts.find((p) => p.type === "minute")!.value, 10);
+    return { hours, minutes };
+  }
+
+  /**
+   * Checks whether the restaurant is open based on schedule and manual toggle.
+   * Returns: { open: boolean; minutesToClose: number | null }
+   * minutesToClose is set when open but closing within 60 minutes.
+   */
+  private checkRestaurantHours(restaurant: {
+    isOpen: boolean;
+    openingTime: string | null;
+    closingTime: string | null;
+    timezone: string;
+  }): { open: boolean; minutesToClose: number | null } {
+    if (!restaurant.isOpen) return { open: false, minutesToClose: null };
+
+    const { openingTime, closingTime, timezone } = restaurant;
+    if (!openingTime || !closingTime) return { open: true, minutesToClose: null };
+
+    const { hours, minutes } = this.getCurrentTimeInTimezone(timezone);
+    const nowMins = hours * 60 + minutes;
+
+    const [openH, openM] = openingTime.split(":").map(Number);
+    const [closeH, closeM] = closingTime.split(":").map(Number);
+    const openMins = openH * 60 + openM;
+    const closeMins = closeH * 60 + closeM;
+
+    // Handle overnight schedules (e.g. open 20:00, close 02:00)
+    let isWithinHours: boolean;
+    let minutesToClose: number | null = null;
+
+    if (openMins < closeMins) {
+      // Same-day schedule
+      isWithinHours = nowMins >= openMins && nowMins < closeMins;
+      if (isWithinHours) {
+        const remaining = closeMins - nowMins;
+        if (remaining <= 60) minutesToClose = remaining;
+      }
+    } else {
+      // Overnight schedule (closing time is next day)
+      isWithinHours = nowMins >= openMins || nowMins < closeMins;
+      if (isWithinHours) {
+        const remaining = nowMins >= openMins
+          ? 24 * 60 - nowMins + closeMins
+          : closeMins - nowMins;
+        if (remaining <= 60) minutesToClose = remaining;
+      }
+    }
+
+    return { open: isWithinHours, minutesToClose };
+  }
+
+  /**
    * Handle incoming WhatsApp message
    */
   async handleMessage(
@@ -34,6 +100,26 @@ export class ConversationService {
     restaurantId: string,
     customerName?: string,
   ): Promise<void> {
+    // Check if restaurant is currently open before doing anything else
+    const restaurantStatus = await prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { isOpen: true, name: true, openingTime: true, closingTime: true, timezone: true },
+    });
+
+    if (!restaurantStatus) return;
+
+    const { open, minutesToClose } = this.checkRestaurantHours(restaurantStatus);
+
+    if (!open) {
+      let closedMsg = `🔴 *We're currently closed*\n\nThank you for reaching out to *${restaurantStatus.name}*!\n\nUnfortunately, we are not accepting orders at this time.`;
+      if (restaurantStatus.openingTime) {
+        closedMsg += ` We open at *${restaurantStatus.openingTime}*.`;
+      }
+      closedMsg += `\n\nWe'd love to serve you when we reopen! 🙏\n\nPlease check back soon — we can't wait to have you order with us again. 😊`;
+      await this.whatsapp.sendTextMessage(from, closedMsg);
+      return;
+    }
+
     const customer = await this.customerRepo.findOrCreate(
       from,
       restaurantId,
@@ -74,7 +160,7 @@ export class ConversationService {
 
     switch (conversation.state) {
       case ConversationState.WELCOME:
-        await this.handleWelcome(from, customer.id, restaurantId);
+        await this.handleWelcome(from, customer.id, restaurantId, undefined, minutesToClose ?? undefined);
         break;
 
       case ConversationState.SELECT_CATEGORY:
@@ -137,6 +223,7 @@ export class ConversationService {
     customerId: string,
     restaurantId: string,
     context?: TempOrderContext,
+    minutesToClose?: number,
   ): Promise<void> {
     // Get categories for this restaurant
     const categories = await prisma.menuCategory.findMany({
@@ -159,9 +246,14 @@ export class ConversationService {
       return;
     }
 
+    let welcomeBody = `Welcome to ${restaurant?.name}! Please select a category to start ordering:`;
+    if (minutesToClose !== undefined) {
+      welcomeBody = `⚠️ *Closing soon!* We close in ${minutesToClose} minute${minutesToClose === 1 ? "" : "s"} — please order ASAP!\n\n` + welcomeBody;
+    }
+
     await this.whatsapp.sendListMessage(
       from,
-      `Welcome to ${restaurant?.name}! Please select a category to start ordering:`,
+      welcomeBody,
       "View Menu",
       [
         {

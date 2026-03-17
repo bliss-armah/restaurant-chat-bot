@@ -26,26 +26,7 @@ export class OrderController {
 
       const orders = await orderService.getOrdersByRestaurant(restaurantId);
 
-      const normalised = orders.map((o) => ({
-        id: o.id,
-        order_number: o.orderNumber,
-        total_amount: o.totalAmount,
-        status: o.status,
-        payment_status: o.paymentStatus,
-        delivery_address: o.deliveryAddress,
-        customer_notes: o.customerNotes,
-        created_at: o.createdAt,
-        customer: o.customer,
-        items: o.items.map((i) => ({
-          id: i.id,
-          item_name: i.itemName,
-          item_price: i.itemPrice,
-          quantity: i.quantity,
-          subtotal: i.subtotal,
-        })),
-      }));
-
-      res.json({ success: true, data: normalised });
+      res.json({ success: true, data: orders });
     } catch (error) {
       next(error);
     }
@@ -89,28 +70,7 @@ export class OrderController {
         { status: status as any, paymentStatus: paymentStatus as any },
       );
 
-      // Normalise to snake_case for frontend
-      res.json({
-        success: true,
-        data: {
-          id: updated.id,
-          order_number: updated.orderNumber,
-          total_amount: updated.totalAmount,
-          status: updated.status,
-          payment_status: updated.paymentStatus,
-          delivery_address: updated.deliveryAddress,
-          customer_notes: updated.customerNotes,
-          created_at: updated.createdAt,
-          customer: updated.customer,
-          items: updated.items.map((i) => ({
-            id: i.id,
-            item_name: i.itemName,
-            item_price: i.itemPrice,
-            quantity: i.quantity,
-            subtotal: i.subtotal,
-          })),
-        },
-      });
+      res.json({ success: true, data: updated });
     } catch (error: any) {
       if (error.statusCode) {
         res.status(error.statusCode).json({ error: error.message });

@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction } from "express";
-import { getSupabaseAdmin } from "../services/supabaseAdmin.js";
+import jwt from "jsonwebtoken";
+import { config } from "../config/env.js";
 
 /**
- * Validates the Supabase JWT from the Authorization header.
- * Attaches the decoded user to req.user.
+ * Validates our custom JWT from the Authorization header.
+ * Attaches the decoded user payload to req.user.
  *
- * All admin routes must use this middleware — the WhatsApp webhook
- * routes are NOT gated here (they use WhatsApp's own verification).
+ * JWT payload: { id, role, restaurantId? }
  */
 export async function authenticate(
   req: Request,
@@ -23,21 +23,19 @@ export async function authenticate(
   const token = authHeader.replace("Bearer ", "").trim();
 
   try {
-    const supabase = getSupabaseAdmin();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
+    const decoded = jwt.verify(token, config.jwt.secret) as {
+      id: string;
+      role: string;
+      restaurantId?: string;
+    };
 
-    if (error || !user) {
-      res.status(401).json({ error: "Unauthorized: invalid or expired token" });
-      return;
-    }
-
-    // Attach the verified Supabase user to the request
-    (req as any).user = user;
+    (req as any).user = {
+      id: decoded.id,
+      role: decoded.role,
+      restaurantId: decoded.restaurantId,
+    };
     next();
-  } catch (err) {
-    res.status(500).json({ error: "Internal auth error" });
+  } catch {
+    res.status(401).json({ error: "Unauthorized: invalid or expired token" });
   }
 }
