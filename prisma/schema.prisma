@@ -161,17 +161,18 @@ model MenuItem {
 // ============================================
 
 model Order {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderNumber       String        @unique @map("order_number")
-  customerId        String        @map("customer_id") @db.Uuid
-  restaurantId      String        @map("restaurant_id") @db.Uuid
-  totalAmount       Float         @map("total_amount")
-  status            OrderStatus   @default(PENDING)
-  paymentStatus     PaymentStatus @default(UNPAID) @map("payment_status")
-  deliveryAddress   String?       @map("delivery_address")
-  customerNotes     String?       @map("customer_notes")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderNumber       String          @unique @map("order_number")
+  customerId        String          @map("customer_id") @db.Uuid
+  restaurantId      String          @map("restaurant_id") @db.Uuid
+  totalAmount       Float           @map("total_amount")
+  status            OrderStatus     @default(PENDING)
+  paymentStatus     PaymentStatus   @default(UNPAID) @map("payment_status")
+  fulfillmentType   FulfillmentType @default(PICKUP) @map("fulfillment_type")
+  deliveryAddress   String?         @map("delivery_address")
+  customerNotes     String?         @map("customer_notes")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
   // Relations
   customer          Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -218,6 +219,11 @@ enum PaymentStatus {
   FAILED
 }
 
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+}
+
 // ============================================
 // CONVERSATION MANAGEMENT
 // ============================================
@@ -247,6 +253,8 @@ enum ConversationState {
   SELECT_QUANTITY
   ADD_MORE
   CONFIRM_ORDER
+  SELECT_ORDER_TYPE
+  COLLECT_DELIVERY_ADDRESS
   PAYMENT_INSTRUCTIONS
   PAYMENT_CONFIRMATION
 }

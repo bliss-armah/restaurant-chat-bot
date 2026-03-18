@@ -14,7 +14,11 @@ const app: Application = express();
 
 app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // ============================================

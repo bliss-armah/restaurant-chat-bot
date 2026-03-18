@@ -1,4 +1,7 @@
 import { ConversationState } from "@prisma/client";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID = (s: string) => UUID_RE.test(s);
 import {
   CustomerRepository,
   ConversationRepository,
@@ -204,6 +207,28 @@ export class ConversationService {
         );
         break;
 
+      case ConversationState.SELECT_ORDER_TYPE:
+        await this.handleOrderTypeSelection(
+          from,
+          messageText,
+          customer.id,
+          restaurantId,
+          whatsapp,
+          context,
+        );
+        break;
+
+      case ConversationState.COLLECT_DELIVERY_ADDRESS:
+        await this.handleDeliveryAddressCollection(
+          from,
+          messageText,
+          customer.id,
+          restaurantId,
+          whatsapp,
+          context,
+        );
+        break;
+
       case ConversationState.PAYMENT_CONFIRMATION:
         await this.handlePaymentConfirmation(
           from,
@@ -288,6 +313,11 @@ export class ConversationService {
     whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
+    if (!isUUID(categoryId)) {
+      await this.handleWelcome(from, customerId, restaurantId, whatsapp, context);
+      return;
+    }
+
     // Get items for this category
     const items = await prisma.menuItem.findMany({
       where: {
@@ -342,6 +372,14 @@ export class ConversationService {
     whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
+    if (!isUUID(itemId)) {
+      await whatsapp.sendTextMessage(
+        from,
+        "Please select an item from the list above.",
+      );
+      return;
+    }
+
     const item = await prisma.menuItem.findUnique({
       where: { id: itemId },
     });
@@ -420,9 +458,13 @@ export class ConversationService {
       items: [...context.items, newItem],
     };
 
-    await whatsapp.sendTextMessage(
+    await whatsapp.sendButtonMessage(
       from,
-      `✅ Added ${quantity}x ${item.name} (${formatPrice(item.price * quantity)})\n\nWould you like to add more items?\nReply YES to continue or NO to complete your order.`,
+      `✅ Added ${quantity}x ${item.name} (${formatPrice(item.price * quantity)})\n\nWould you like to add more items?`,
+      [
+        { id: "YES", title: "✅ Add More" },
+        { id: "NO", title: "✋ I'm Done" },
+      ],
     );
 
     await this.conversationRepo.updateState(
@@ -450,9 +492,13 @@ export class ConversationService {
     } else if (response === "no" || response === "n") {
       await this.showOrderSummary(from, customerId, whatsapp, context);
     } else {
-      await whatsapp.sendTextMessage(
+      await whatsapp.sendButtonMessage(
         from,
-        "Please reply YES to add more items or NO to complete your order.",
+        "Would you like to add more items?",
+        [
+          { id: "YES", title: "✅ Add More" },
+          { id: "NO", title: "✋ I'm Done" },
+        ],
       );
     }
   }
@@ -483,10 +529,16 @@ export class ConversationService {
       summary += `${index + 1}. ${item.name}\n   ${item.quantity}x @ ${formatPrice(item.price)} = ${formatPrice(itemTotal)}\n\n`;
     });
 
-    summary += `💰 *Total: ${formatPrice(total)}*\n\n`;
-    summary += "Reply CONFIRM to place your order or CANCEL to start over.";
+    summary += `💰 *Total: ${formatPrice(total)}*`;
 
-    await whatsapp.sendTextMessage(from, summary);
+    await whatsapp.sendButtonMessage(
+      from,
+      summary,
+      [
+        { id: "CONFIRM", title: "✅ Confirm Order" },
+        { id: "CANCEL", title: "❌ Cancel" },
+      ],
+    );
     await this.conversationRepo.updateState(
       customerId,
       ConversationState.CONFIRM_ORDER,
@@ -495,7 +547,7 @@ export class ConversationService {
   }
 
   /**
-   * CONFIRM_ORDER state - Create order and send payment instructions
+   * CONFIRM_ORDER state - Ask for delivery/pickup preference
    */
   private async handleOrderConfirmation(
     from: string,
@@ -517,14 +569,99 @@ export class ConversationService {
     }
 
     if (response !== "confirm") {
-      await whatsapp.sendTextMessage(
+      await whatsapp.sendButtonMessage(
         from,
-        "Please reply CONFIRM to place your order or CANCEL to start over.",
+        "Please confirm or cancel your order:",
+        [
+          { id: "CONFIRM", title: "✅ Confirm Order" },
+          { id: "CANCEL", title: "❌ Cancel" },
+        ],
       );
       return;
     }
 
-    // Create order
+    await whatsapp.sendButtonMessage(
+      from,
+      "How would you like to receive your order?",
+      [
+        { id: "DELIVERY", title: "🚚 Delivery" },
+        { id: "PICKUP", title: "🏪 Pickup" },
+      ],
+    );
+    await this.conversationRepo.updateState(
+      customerId,
+      ConversationState.SELECT_ORDER_TYPE,
+      context,
+    );
+  }
+
+  /**
+   * SELECT_ORDER_TYPE state - Handle delivery or pickup selection
+   */
+  private async handleOrderTypeSelection(
+    from: string,
+    input: string,
+    customerId: string,
+    restaurantId: string,
+    whatsapp: WhatsAppService,
+    context: TempOrderContext,
+  ): Promise<void> {
+    const response = input.trim().toUpperCase();
+
+    if (response === "DELIVERY") {
+      await whatsapp.sendTextMessage(from, "📍 Please share your delivery address:");
+      await this.conversationRepo.updateState(
+        customerId,
+        ConversationState.COLLECT_DELIVERY_ADDRESS,
+        { ...context, orderType: "DELIVERY" },
+      );
+    } else if (response === "PICKUP") {
+      await this.createOrderAndSendPayment(from, customerId, restaurantId, whatsapp, context, "PICKUP");
+    } else {
+      await whatsapp.sendButtonMessage(
+        from,
+        "How would you like to receive your order?",
+        [
+          { id: "DELIVERY", title: "🚚 Delivery" },
+          { id: "PICKUP", title: "🏪 Pickup" },
+        ],
+      );
+    }
+  }
+
+  /**
+   * COLLECT_DELIVERY_ADDRESS state - Collect delivery address then create order
+   */
+  private async handleDeliveryAddressCollection(
+    from: string,
+    input: string,
+    customerId: string,
+    restaurantId: string,
+    whatsapp: WhatsAppService,
+    context: TempOrderContext,
+  ): Promise<void> {
+    const address = input.trim();
+
+    if (!address) {
+      await whatsapp.sendTextMessage(from, "📍 Please share your delivery address:");
+      return;
+    }
+
+    await this.createOrderAndSendPayment(from, customerId, restaurantId, whatsapp, context, "DELIVERY", address);
+  }
+
+  /**
+   * Create order in DB and send payment instructions
+   */
+  private async createOrderAndSendPayment(
+    from: string,
+    customerId: string,
+    restaurantId: string,
+    whatsapp: WhatsAppService,
+    context: TempOrderContext,
+    orderType: "DELIVERY" | "PICKUP",
+    deliveryAddress?: string,
+  ): Promise<void> {
     const orderNumber = `ORD-${Date.now()}`;
     const totalAmount = context.items.reduce(
       (sum, item) => sum + item.price * item.quantity,
@@ -539,6 +676,8 @@ export class ConversationService {
         totalAmount,
         status: "PENDING",
         paymentStatus: "UNPAID",
+        fulfillmentType: orderType,
+        deliveryAddress: deliveryAddress || null,
         items: {
           create: context.items.map((item) => ({
             menuItemId: item.menuItemId,
@@ -551,13 +690,16 @@ export class ConversationService {
       },
     });
 
-    // Send payment instructions
     const restaurant = await this.getRestaurant(restaurantId);
+    const fulfillmentLine = orderType === "DELIVERY"
+      ? `📍 Delivery to: ${deliveryAddress}`
+      : `🏪 Pickup — collect at the restaurant`;
 
     const paymentMessage =
       `✅ *Order Confirmed!*\n\n` +
       `📝 Order Number: ${order.orderNumber}\n` +
-      `💰 Total Amount: ${formatPrice(order.totalAmount)}\n\n` +
+      `💰 Total Amount: ${formatPrice(order.totalAmount)}\n` +
+      `${fulfillmentLine}\n\n` +
       `*Payment Instructions:*\n` +
       `Please send ${formatPrice(order.totalAmount)} to:\n\n` +
       `📱 MTN MoMo: ${restaurant.momoNumber}\n` +
@@ -589,6 +731,7 @@ export class ConversationService {
       const order = await prisma.order.findFirst({
         where: { customerId },
         orderBy: { createdAt: "desc" },
+        select: { id: true, orderNumber: true, totalAmount: true, fulfillmentType: true, deliveryAddress: true },
       });
 
       if (!order) {
@@ -612,11 +755,15 @@ export class ConversationService {
 
       const restaurant = await this.getRestaurant(restaurantId);
       if (restaurant.phone) {
+        const fulfillmentNotif = order.fulfillmentType === "DELIVERY"
+          ? `Type: 🚚 DELIVERY — 📍 ${order.deliveryAddress}`
+          : `Type: 🏪 PICKUP`;
         const notificationMessage =
           `New payment notification!\n\n` +
           `Order #${order.orderNumber}\n` +
           `Customer: ${from}\n` +
-          `Amount: GHS ${Number(order.totalAmount).toFixed(2)}\n\n` +
+          `Amount: GHS ${Number(order.totalAmount).toFixed(2)}\n` +
+          `${fulfillmentNotif}\n\n` +
           `Payment status: Pending verification\n` +
           `Check your dashboard to manage this order.`;
 

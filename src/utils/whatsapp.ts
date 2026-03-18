@@ -46,6 +46,32 @@ interface InteractiveListMessage {
   };
 }
 
+interface InteractiveButtonMessage {
+  messaging_product: "whatsapp";
+  recipient_type: "individual";
+  to: string;
+  type: "interactive";
+  interactive: {
+    type: "button";
+    header?: {
+      type: "text";
+      text: string;
+    };
+    body: {
+      text: string;
+    };
+    action: {
+      buttons: Array<{
+        type: "reply";
+        reply: {
+          id: string;
+          title: string;
+        };
+      }>;
+    };
+  };
+}
+
 // ============================================
 // WHATSAPP UTILS
 // ============================================
@@ -115,10 +141,43 @@ export class WhatsAppService {
   }
 
   /**
+   * Send an interactive button message (up to 3 reply buttons)
+   */
+  async sendButtonMessage(
+    to: string,
+    body: string,
+    buttons: Array<{ id: string; title: string }>,
+    header?: string,
+  ): Promise<void> {
+    const message: InteractiveButtonMessage = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body },
+        action: {
+          buttons: buttons.map((btn) => ({
+            type: "reply",
+            reply: { id: btn.id, title: btn.title },
+          })),
+        },
+      },
+    };
+
+    if (header) {
+      message.interactive.header = { type: "text", text: header };
+    }
+
+    await this.sendMessage(message);
+  }
+
+  /**
    * Internal method to send messages via WhatsApp Cloud API
    */
   private async sendMessage(
-    message: TextMessage | InteractiveListMessage,
+    message: TextMessage | InteractiveListMessage | InteractiveButtonMessage,
   ): Promise<void> {
     try {
       await axios.post(this.apiUrl, message, {

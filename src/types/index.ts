@@ -9,8 +9,15 @@ export enum ConversationState {
   SELECT_QUANTITY = "SELECT_QUANTITY",
   ADD_MORE = "ADD_MORE",
   CONFIRM_ORDER = "CONFIRM_ORDER",
+  SELECT_ORDER_TYPE = "SELECT_ORDER_TYPE",
+  COLLECT_DELIVERY_ADDRESS = "COLLECT_DELIVERY_ADDRESS",
   PAYMENT_INSTRUCTIONS = "PAYMENT_INSTRUCTIONS",
   PAYMENT_CONFIRMATION = "PAYMENT_CONFIRMATION",
+}
+
+export enum FulfillmentType {
+  DELIVERY = "DELIVERY",
+  PICKUP = "PICKUP",
 }
 
 // ============================================
@@ -49,6 +56,8 @@ export interface TempOrderContext {
   selectedCategoryId?: string;
   selectedItemId?: string;
   pendingQuantity?: number;
+  orderType?: "DELIVERY" | "PICKUP";
+  deliveryAddress?: string;
 }
 
 // ============================================
