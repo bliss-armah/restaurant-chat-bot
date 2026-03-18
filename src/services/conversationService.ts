@@ -17,12 +17,10 @@ import { prisma } from "../config/database.js";
 export class ConversationService {
   private customerRepo: CustomerRepository;
   private conversationRepo: ConversationRepository;
-  private whatsapp: WhatsAppService;
 
   constructor() {
     this.customerRepo = new CustomerRepository();
     this.conversationRepo = new ConversationRepository();
-    this.whatsapp = new WhatsAppService();
   }
 
   /**
@@ -103,10 +101,12 @@ export class ConversationService {
     // Check if restaurant is currently open before doing anything else
     const restaurantStatus = await prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { isOpen: true, name: true, openingTime: true, closingTime: true, timezone: true },
+      select: { isOpen: true, name: true, openingTime: true, closingTime: true, timezone: true, whatsappPhoneNumberId: true },
     });
 
     if (!restaurantStatus) return;
+
+    const whatsapp = new WhatsAppService(restaurantStatus.whatsappPhoneNumberId ?? undefined);
 
     const { open, minutesToClose } = this.checkRestaurantHours(restaurantStatus);
 
@@ -116,7 +116,7 @@ export class ConversationService {
         closedMsg += ` We open at *${restaurantStatus.openingTime}*.`;
       }
       closedMsg += `\n\nWe'd love to serve you when we reopen! 🙏\n\nPlease check back soon — we can't wait to have you order with us again. 😊`;
-      await this.whatsapp.sendTextMessage(from, closedMsg);
+      await whatsapp.sendTextMessage(from, closedMsg);
       return;
     }
 
@@ -149,18 +149,18 @@ export class ConversationService {
 
       await this.conversationRepo.reset(customer.id);
 
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "🔄 Your previous order has been cleared.\n\nLet's start fresh!",
       );
 
-      await this.handleWelcome(from, customer.id, restaurantId);
+      await this.handleWelcome(from, customer.id, restaurantId, whatsapp);
       return;
     }
 
     switch (conversation.state) {
       case ConversationState.WELCOME:
-        await this.handleWelcome(from, customer.id, restaurantId, undefined, minutesToClose ?? undefined);
+        await this.handleWelcome(from, customer.id, restaurantId, whatsapp, undefined, minutesToClose ?? undefined);
         break;
 
       case ConversationState.SELECT_CATEGORY:
@@ -169,16 +169,17 @@ export class ConversationService {
           messageText,
           customer.id,
           restaurantId,
+          whatsapp,
           context,
         );
         break;
 
       case ConversationState.SELECT_ITEM:
-        await this.handleItemSelection(from, messageText, customer.id, context);
+        await this.handleItemSelection(from, messageText, customer.id, whatsapp, context);
         break;
 
       case ConversationState.SELECT_QUANTITY:
-        await this.handleQuantityInput(from, messageText, customer.id, context);
+        await this.handleQuantityInput(from, messageText, customer.id, whatsapp, context);
         break;
 
       case ConversationState.ADD_MORE:
@@ -187,6 +188,7 @@ export class ConversationService {
           messageText,
           customer.id,
           restaurantId,
+          whatsapp,
           context,
         );
         break;
@@ -197,6 +199,7 @@ export class ConversationService {
           messageText,
           customer.id,
           restaurantId,
+          whatsapp,
           context,
         );
         break;
@@ -207,11 +210,12 @@ export class ConversationService {
           messageText,
           customer.id,
           restaurantId,
+          whatsapp,
         );
         break;
 
       default:
-        await this.handleWelcome(from, customer.id, restaurantId);
+        await this.handleWelcome(from, customer.id, restaurantId, whatsapp);
     }
   }
 
@@ -222,6 +226,7 @@ export class ConversationService {
     from: string,
     customerId: string,
     restaurantId: string,
+    whatsapp: WhatsAppService,
     context?: TempOrderContext,
     minutesToClose?: number,
   ): Promise<void> {
@@ -239,7 +244,7 @@ export class ConversationService {
     });
 
     if (categories.length === 0) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         `🍽️ Welcome ${restaurant?.name}! Our menu is being updated. Please check back later.`,
       );
@@ -251,7 +256,7 @@ export class ConversationService {
       welcomeBody = `⚠️ *Closing soon!* We close in ${minutesToClose} minute${minutesToClose === 1 ? "" : "s"} — please order ASAP!\n\n` + welcomeBody;
     }
 
-    await this.whatsapp.sendListMessage(
+    await whatsapp.sendListMessage(
       from,
       welcomeBody,
       "View Menu",
@@ -280,6 +285,7 @@ export class ConversationService {
     categoryId: string,
     customerId: string,
     restaurantId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     // Get items for this category
@@ -292,15 +298,15 @@ export class ConversationService {
     });
 
     if (items.length === 0) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "😕 This category has no items available. Let me show you the menu again.",
       );
-      await this.handleWelcome(from, customerId, restaurantId);
+      await this.handleWelcome(from, customerId, restaurantId, whatsapp);
       return;
     }
 
-    await this.whatsapp.sendListMessage(
+    await whatsapp.sendListMessage(
       from,
       "Select an item from this category:",
       "Choose Item",
@@ -333,6 +339,7 @@ export class ConversationService {
     from: string,
     itemId: string,
     customerId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     const item = await prisma.menuItem.findUnique({
@@ -340,14 +347,14 @@ export class ConversationService {
     });
 
     if (!item || !item.isAvailable) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "😕 This item is not available right now.",
       );
       return;
     }
 
-    await this.whatsapp.sendTextMessage(
+    await whatsapp.sendTextMessage(
       from,
       `📝 ${item.name}\n💰 ${formatPrice(item.price)}\n\nHow many would you like? (Enter a number)`,
     );
@@ -369,12 +376,13 @@ export class ConversationService {
     from: string,
     input: string,
     customerId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     const quantity = parseInt(input.trim(), 10);
 
     if (isNaN(quantity) || quantity < 1) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "❌ Please enter a valid quantity (e.g., 1, 2, 3)",
       );
@@ -382,7 +390,7 @@ export class ConversationService {
     }
 
     if (!context.selectedItemId) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "❌ Something went wrong. Let me restart.",
       );
@@ -395,7 +403,7 @@ export class ConversationService {
     });
 
     if (!item) {
-      await this.whatsapp.sendTextMessage(from, "❌ Item not found.");
+      await whatsapp.sendTextMessage(from, "❌ Item not found.");
       return;
     }
 
@@ -412,7 +420,7 @@ export class ConversationService {
       items: [...context.items, newItem],
     };
 
-    await this.whatsapp.sendTextMessage(
+    await whatsapp.sendTextMessage(
       from,
       `✅ Added ${quantity}x ${item.name} (${formatPrice(item.price * quantity)})\n\nWould you like to add more items?\nReply YES to continue or NO to complete your order.`,
     );
@@ -432,16 +440,17 @@ export class ConversationService {
     input: string,
     customerId: string,
     restaurantId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     const response = input.trim().toLowerCase();
 
     if (response === "yes" || response === "y") {
-      await this.handleWelcome(from, customerId, restaurantId, context);
+      await this.handleWelcome(from, customerId, restaurantId, whatsapp, context);
     } else if (response === "no" || response === "n") {
-      await this.showOrderSummary(from, customerId, context);
+      await this.showOrderSummary(from, customerId, whatsapp, context);
     } else {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "Please reply YES to add more items or NO to complete your order.",
       );
@@ -454,10 +463,11 @@ export class ConversationService {
   private async showOrderSummary(
     from: string,
     customerId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     if (context.items.length === 0) {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "You haven't added any items yet.",
       );
@@ -476,7 +486,7 @@ export class ConversationService {
     summary += `💰 *Total: ${formatPrice(total)}*\n\n`;
     summary += "Reply CONFIRM to place your order or CANCEL to start over.";
 
-    await this.whatsapp.sendTextMessage(from, summary);
+    await whatsapp.sendTextMessage(from, summary);
     await this.conversationRepo.updateState(
       customerId,
       ConversationState.CONFIRM_ORDER,
@@ -492,12 +502,13 @@ export class ConversationService {
     input: string,
     customerId: string,
     restaurantId: string,
+    whatsapp: WhatsAppService,
     context: TempOrderContext,
   ): Promise<void> {
     const response = input.trim().toLowerCase();
 
     if (response === "cancel") {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "❌ Order cancelled. Type HI to start a new order.",
       );
@@ -506,7 +517,7 @@ export class ConversationService {
     }
 
     if (response !== "confirm") {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "Please reply CONFIRM to place your order or CANCEL to start over.",
       );
@@ -553,7 +564,7 @@ export class ConversationService {
       `👤 Name: ${restaurant.momoName}\n\n` +
       `Reply *PAID* once you have completed the payment.`;
 
-    await this.whatsapp.sendTextMessage(from, paymentMessage);
+    await whatsapp.sendTextMessage(from, paymentMessage);
     await this.conversationRepo.updateState(
       customerId,
       ConversationState.PAYMENT_CONFIRMATION,
@@ -569,6 +580,7 @@ export class ConversationService {
     input: string,
     customerId: string,
     restaurantId: string,
+    whatsapp: WhatsAppService,
   ): Promise<void> {
     const response = input.trim().toLowerCase();
 
@@ -580,7 +592,7 @@ export class ConversationService {
       });
 
       if (!order) {
-        await this.whatsapp.sendTextMessage(from, "❌ No recent order found.");
+        await whatsapp.sendTextMessage(from, "❌ No recent order found.");
         return;
       }
 
@@ -590,7 +602,7 @@ export class ConversationService {
         data: { paymentStatus: "PENDING_VERIFICATION" },
       });
 
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         `✅ Thank you! We have received your payment notification.\n\n` +
           `Order #${order.orderNumber} is being verified.\n` +
@@ -608,14 +620,14 @@ export class ConversationService {
           `Payment status: Pending verification\n` +
           `Check your dashboard to manage this order.`;
 
-        this.whatsapp.sendTextMessage(restaurant.phone, notificationMessage).catch((err) => {
+        whatsapp.sendTextMessage(restaurant.phone, notificationMessage).catch((err) => {
           console.error("Failed to send restaurant order notification:", err);
         });
       }
 
       await this.conversationRepo.reset(customerId);
     } else {
-      await this.whatsapp.sendTextMessage(
+      await whatsapp.sendTextMessage(
         from,
         "Please reply *PAID* once you have completed the payment, or type HI to start a new order.",
       );

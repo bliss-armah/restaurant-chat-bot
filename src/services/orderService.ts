@@ -73,7 +73,6 @@ function buildWhatsAppMessage(
 // Order Service
 // ─────────────────────────────────────────────────────────────────────────────
 
-const whatsapp = new WhatsAppService();
 
 export const orderService = {
   /**
@@ -197,6 +196,11 @@ export const orderService = {
     if (newStatus) {
       const message = buildWhatsAppMessage(order.orderNumber, newStatus);
       if (message && order.customer.phone) {
+        const restaurant = await prisma.restaurant.findUnique({
+          where: { id: restaurantId },
+          select: { whatsappPhoneNumberId: true },
+        });
+        const whatsapp = new WhatsAppService(restaurant?.whatsappPhoneNumberId ?? undefined);
         whatsapp.sendTextMessage(order.customer.phone, message).catch((err) => {
           console.error(
             `⚠️  WhatsApp notification failed for order ${order.orderNumber}:`,

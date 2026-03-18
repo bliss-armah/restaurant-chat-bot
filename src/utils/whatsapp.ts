@@ -55,8 +55,8 @@ export class WhatsAppService {
   private readonly token: string;
   private readonly phoneNumberId: string;
 
-  constructor() {
-    this.phoneNumberId = config.whatsapp.phoneNumberId;
+  constructor(phoneNumberId?: string) {
+    this.phoneNumberId = phoneNumberId ?? config.whatsapp.phoneNumberId;
     this.token = config.whatsapp.token;
     this.apiUrl = `https://graph.facebook.com/v18.0/${this.phoneNumberId}/messages`;
   }
