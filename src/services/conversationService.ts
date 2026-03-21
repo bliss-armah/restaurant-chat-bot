@@ -753,8 +753,8 @@ export class ConversationService {
           `Type HI to place a new order.`,
       );
 
-      const restaurant = await this.getRestaurant(restaurantId);
-      if (restaurant.phone) {
+      const restaurant = await this.getRestaurant(restaurantId);      
+      if (restaurant.whatsappNumber) {
         const fulfillmentNotif = order.fulfillmentType === "DELIVERY"
           ? `Type: 🚚 DELIVERY — 📍 ${order.deliveryAddress}`
           : `Type: 🏪 PICKUP`;
@@ -767,7 +767,7 @@ export class ConversationService {
           `Payment status: Pending verification\n` +
           `Check your dashboard to manage this order.`;
 
-        whatsapp.sendTextMessage(restaurant.phone, notificationMessage).catch((err) => {
+        whatsapp.sendTextMessage(restaurant.whatsappNumber, notificationMessage).catch((err) => {
           console.error("Failed to send restaurant order notification:", err);
         });
       }
