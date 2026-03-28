@@ -34,6 +34,7 @@ model Restaurant {
   timezone                    String         @default("Africa/Accra") @map("timezone")
   subscriptionStatus          String         @default("TRIAL") @map("subscription_status")
   trialEndsAt                 DateTime?      @map("trial_ends_at")
+  paystackCustomerCode        String?        @map("paystack_customer_code")
   createdAt                   DateTime       @default(now()) @map("created_at")
   updatedAt                   DateTime       @updatedAt @map("updated_at")
 
@@ -44,6 +45,7 @@ model Restaurant {
   customers       Customer[]
   conversations   Conversation[]
   userRoles       UserRoleRecord[]
+  subscription    Subscription?
 
   @@index([isActive, isOpen])
   @@map("restaurants")
@@ -222,6 +224,29 @@ enum PaymentStatus {
 enum FulfillmentType {
   DELIVERY
   PICKUP
+}
+
+// ============================================
+// BILLING / SUBSCRIPTIONS
+// ============================================
+
+model Subscription {
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  restaurantId             String     @unique @map("restaurant_id") @db.Uuid
+  restaurant               Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  paystackSubscriptionCode String?    @map("paystack_subscription_code")
+  paystackEmailToken       String?    @map("paystack_email_token")
+  paystackCustomerCode     String?    @map("paystack_customer_code")
+  billingInterval          String     @map("billing_interval") // "monthly" | "yearly"
+  amount                   Int        // in pesewas (GHS 30 = 3000)
+  status                   String     @default("inactive") // "active" | "inactive" | "cancelled" | "non-renewing"
+  currentPeriodStart       DateTime?  @map("current_period_start")
+  currentPeriodEnd         DateTime?  @map("current_period_end")
+  cancelledAt              DateTime?  @map("cancelled_at")
+  createdAt                DateTime   @default(now()) @map("created_at")
+  updatedAt                DateTime   @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
 }
 
 // ============================================

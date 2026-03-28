@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -33,6 +34,7 @@ import restaurantRoutes from "./routes/restaurantRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import menuItemRoutes from "./routes/menuItemRoutes.js";
 import statsRoutes from "./routes/statsRoutes.js";
+import billingRoutes from "./routes/billingRoutes.js";
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -63,6 +65,9 @@ app.use("/stats", statsRoutes);
 
 // Admin user management (SUPER_ADMIN only)
 app.use("/admin", adminRoutes);
+
+// Billing & subscriptions (Paystack)
+app.use("/billing", billingRoutes);
 
 // ============================================
 // ERROR HANDLING
