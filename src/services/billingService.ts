@@ -193,5 +193,12 @@ export async function cancelSubscription(restaurantId: string) {
 // ─── Fetch subscription ────────────────────────────────────────────────────────
 
 export async function getSubscription(restaurantId: string) {
-  return prisma.subscription.findUnique({ where: { restaurantId } });
+  const [subscription, restaurant] = await Promise.all([
+    prisma.subscription.findUnique({ where: { restaurantId } }),
+    prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { subscriptionStatus: true, trialEndsAt: true },
+    }),
+  ]);
+  return { subscription: subscription ?? null, restaurant };
 }

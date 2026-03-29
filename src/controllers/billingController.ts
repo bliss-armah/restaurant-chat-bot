@@ -38,8 +38,15 @@ export async function getSubscription(req: Request, res: Response) {
       return;
     }
 
-    const subscription = await billingService.getSubscription(restaurantId);
-    res.json({ success: true, data: { subscription: subscription ?? null } });
+    const { subscription, restaurant } = await billingService.getSubscription(restaurantId);
+    res.json({
+      success: true,
+      data: {
+        subscription,
+        subscriptionStatus: restaurant?.subscriptionStatus ?? null,
+        trialEndsAt: restaurant?.trialEndsAt ?? null,
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
