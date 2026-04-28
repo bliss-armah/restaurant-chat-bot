@@ -51,8 +51,8 @@ jobs:
       - name: Build
         run: yarn build
 
-      # - name: Run tests
-      #   run: yarn test
+      - name: Run tests
+        run: yarn test
       #   env:
       #     DATABASE_URL: postgresql://restaurant_user:restaurant_password@localhost:5432/restaurant_bot_test
       #     JWT_SECRET: test-jwt-secret
