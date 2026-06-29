@@ -27,6 +27,12 @@ RUN yarn install --frozen-lockfile --production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Prisma CLI (a devDependency, so not in the --production install above) — needed
+# for `prisma migrate deploy` at startup. Its only deps are @prisma/config and
+# @prisma/engines, already copied above.
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY prisma ./prisma/
 EXPOSE 4050
-CMD ["node", "dist/index.js"]
+# Apply any pending migrations, then start. `migrate deploy` is idempotent and
+# production-safe — it only runs migrations not yet applied.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/index.js"]
