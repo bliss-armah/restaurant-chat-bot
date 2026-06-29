@@ -33,6 +33,7 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY prisma ./prisma/
 EXPOSE 4050
-# Apply any pending migrations, then start. `migrate deploy` is idempotent and
-# production-safe — it only runs migrations not yet applied.
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/index.js"]
+# Apply pending migrations, seed the admin, then start. Both `migrate deploy`
+# and the seed are idempotent (the seed skips if the admin already exists), so
+# running them on every deploy is safe.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node dist/seed.js && node dist/index.js"]

@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx src/seed.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
