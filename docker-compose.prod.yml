@@ -1,0 +1,62 @@
+# Production compose for Dokploy.
+#
+# Differences from the dev docker-compose.yml:
+#   - backend builds the `production` Dockerfile stage (compiled JS, no devDeps)
+#   - NODE_ENV=production
+#   - NO source bind-mounts and NO `yarn dev` / tsx watch
+#   - NO command override — the Dockerfile CMD runs `prisma migrate deploy`
+#     then `node dist/index.js`
+#   - Postgres uses its own volume (postgres_data_prod) so the schema is created
+#     cleanly by migrations rather than the dev `db push` state.
+#
+# Point Dokploy's "Compose Path" at this file instead of docker-compose.yml.
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-restaurant_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-restaurant_bot}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-restaurant_user} -d ${POSTGRES_DB:-restaurant_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production          # compiled server — runs `node dist/index.js`
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-restaurant_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-restaurant_bot}?schema=public
+      PORT: 4050
+      NODE_ENV: production
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID:-}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_MONTHLY_PLAN_CODE: ${PAYSTACK_MONTHLY_PLAN_CODE:-}
+      PAYSTACK_YEARLY_PLAN_CODE: ${PAYSTACK_YEARLY_PLAN_CODE:-}
+      PAYSTACK_CALLBACK_URL: ${PAYSTACK_CALLBACK_URL:-}
+    expose:
+      - "4050"                    # reachable by Dokploy/Traefik; not published to host
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data_prod:
+    driver: local
