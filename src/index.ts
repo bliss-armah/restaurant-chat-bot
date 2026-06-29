@@ -3,7 +3,7 @@ import express, { Application } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { config, validateConfig } from "./config/env.js";
-import { errorHandler } from "./middleware/errorHandler";
+import { errorHandler } from "./middleware/errorHandler.js";
 
 validateConfig();
 
