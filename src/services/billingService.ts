@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { config } from "../config/env";
+import { config } from "../config/env.js";
 
 const prisma = new PrismaClient();
 
